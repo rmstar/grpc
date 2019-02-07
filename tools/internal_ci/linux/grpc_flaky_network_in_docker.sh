@@ -26,6 +26,11 @@ ${name}')
 cd /var/local/git/grpc
 
 # TODO(jtattermusch): install prerequsites if needed
+apt-get install -y iptables
+
+./tools/run_tests/start_port_server.py || true
+
+cd test/cpp/end2end
 
 # TODO(jtattermusch): run the flaky network test instead
-bazel build --spawn_strategy=standalone --genrule_strategy=standalone :all test/... examples/...
+bazel test --spawn_strategy=standalone --genrule_strategy=standalone --test_output=all :flaky_network_test
