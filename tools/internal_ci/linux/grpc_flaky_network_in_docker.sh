@@ -23,14 +23,10 @@ git clone /var/local/jenkins/grpc /var/local/git/grpc
 (cd /var/local/jenkins/grpc/ && git submodule foreach 'cd /var/local/git/grpc \
 && git submodule update --init --reference /var/local/jenkins/grpc/${name} \
 ${name}')
-cd /var/local/git/grpc
+cd /var/local/git/grpc/test/cpp/end2end
 
 # TODO(jtattermusch): install prerequsites if needed
 apt-get install -y iptables
-
-./tools/run_tests/start_port_server.py || true
-
-cd test/cpp/end2end
 
 # TODO(jtattermusch): run the flaky network test instead
 bazel test --spawn_strategy=standalone --genrule_strategy=standalone --test_output=all :flaky_network_test

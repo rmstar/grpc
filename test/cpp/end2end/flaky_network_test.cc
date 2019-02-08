@@ -166,7 +166,11 @@ class FlakyNetworkTest : public ::testing::Test {
   }
 
   void StartServer() {
-    port_ = grpc_pick_unused_port_or_die();
+    // TODO (pjaikumar): Ideally, we should allocate the port dynamically using
+    // grpc_pick_unused_port_or_die(). That doesn't work inside some docker
+    // containers because port_server listens on localhost which maps to
+    // ip6-looopback, but ipv6 support is not enabled by default in docker.
+    port_ = SERVER_PORT;
     server_.reset(new ServerData(port_));
     server_->Start(server_host_);
   }
@@ -277,6 +281,7 @@ class FlakyNetworkTest : public ::testing::Test {
   const grpc::string netmask_;
   std::unique_ptr<grpc::testing::EchoTestService::Stub> stub_;
   std::unique_ptr<ServerData> server_;
+  const int SERVER_PORT = 32750;
   int port_;
   const grpc::string kRequestMessage_;
 };
