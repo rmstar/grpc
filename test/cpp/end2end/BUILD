@@ -16,6 +16,16 @@ licenses(["notice"])  # Apache v2
 
 load("//bazel:grpc_build_system.bzl", "grpc_cc_binary", "grpc_cc_library", "grpc_cc_test", "grpc_package")
 
+config_setting(
+    name = "mac_x86_64",
+    values = {"cpu": "darwin"},
+)
+
+COPTS = select({
+    ":mac_x86_64": ["-DGRPC_CFSTREAM"],
+    "//conditions:default": [],
+})
+
 grpc_package(
     name = "test/cpp/end2end",
     visibility = "public",
@@ -219,10 +229,10 @@ grpc_cc_test(
 
 grpc_cc_test(
     name = "end2end_test",
+    size = "large",  # with poll-cv this takes long, see #17493
     deps = [
         ":end2end_test_lib",
     ],
-    size = "large",  # with poll-cv this takes long, see #17493
 )
 
 grpc_cc_test(
@@ -580,6 +590,28 @@ grpc_cc_test(
         "//src/proto/grpc/testing:echo_messages_proto",
         "//src/proto/grpc/testing:echo_proto",
         "//src/proto/grpc/testing/duplicate:echo_duplicate_proto",
+        "//test/core/util:grpc_test_util",
+        "//test/cpp/util:test_util",
+    ],
+)
+
+grpc_cc_test(
+    name = "cfstream_test",
+    srcs = ["cfstream_test.cc"],
+    external_deps = [
+        "gtest",
+    ],
+    tags = ["manual"],  # test requires root, won't work with bazel RBE
+    copts = COPTS,
+    deps = [
+        ":test_service_impl",
+        "//:gpr",
+        "//:grpc",
+        "//:grpc++",
+        "//:grpc_cfstream",
+        "//src/proto/grpc/testing:echo_messages_proto",
+        "//src/proto/grpc/testing:echo_proto",
+        "//src/proto/grpc/testing:simple_messages_proto",
         "//test/core/util:grpc_test_util",
         "//test/cpp/util:test_util",
     ],
