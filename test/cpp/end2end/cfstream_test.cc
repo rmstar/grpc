@@ -68,26 +68,26 @@ class CFStreamTest : public ::testing::Test {
     std::ostringstream cmd;
     // Add DNS entry for server_host_ in /etc/hosts
     cmd << "echo '" << ipv4_address_ << "      " << server_host_
-        << "  ' >> /etc/hosts";
+        << "  ' | sudo tee -a /etc/hosts";
     std::system(cmd.str().c_str());
   }
 
   void DNSDown() {
     std::ostringstream cmd;
     // Remove DNS entry for server_host_ in /etc/hosts
-    cmd << "sed -i '.bak' '/" << server_host_ << "/d' /etc/hosts";
+    cmd << "sudo sed -i '.bak' '/" << server_host_ << "/d' /etc/hosts";
     std::system(cmd.str().c_str());
   }
 
   void InterfaceUp() {
     std::ostringstream cmd;
-    cmd << "ifconfig " << interface_ << " alias " << ipv4_address_;
+    cmd << "sudo /sbin/ifconfig " << interface_ << " alias " << ipv4_address_;
     std::system(cmd.str().c_str());
   }
 
   void InterfaceDown() {
     std::ostringstream cmd;
-    cmd << "ifconfig " << interface_ << " -alias " << ipv4_address_;
+    cmd << "sudo /sbin/ifconfig " << interface_ << " -alias " << ipv4_address_;
     std::system(cmd.str().c_str());
   }
 
@@ -114,6 +114,7 @@ class CFStreamTest : public ::testing::Test {
   }
 
   void StartServer() {
+    // port_ = 32750;
     port_ = grpc_pick_unused_port_or_die();
     server_.reset(new ServerData(port_));
     server_->Start(server_host_);
