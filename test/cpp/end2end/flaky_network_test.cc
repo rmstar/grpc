@@ -130,7 +130,7 @@ class FlakyNetworkTest : public ::testing::Test {
     std::ostringstream cmd;
     // Emulate a flaky network connection over interface_. Add a delay of 100ms
     // +/- 590ms, 3% packet loss, 1% duplicates and 0.1% corrupt packets.
-    cmd << "tc qdisc add dev " << interface_
+    cmd << "tc qdisc replace dev " << interface_
         << " root netem delay 100ms 50ms distribution normal loss 3% duplicate "
            "1% corrupt 0.1% ";
     std::system(cmd.str().c_str());
@@ -171,6 +171,7 @@ class FlakyNetworkTest : public ::testing::Test {
     // containers because port_server listens on localhost which maps to
     // ip6-looopback, but ipv6 support is not enabled by default in docker.
     port_ = SERVER_PORT;
+
     server_.reset(new ServerData(port_));
     server_->Start(server_host_);
   }
@@ -193,22 +194,29 @@ class FlakyNetworkTest : public ::testing::Test {
                                InsecureChannelCredentials(), args);
   }
 
-  void SendRpc(
+  bool SendRpc(
       const std::unique_ptr<grpc::testing::EchoTestService::Stub>& stub,
-      bool expect_success = false) {
+      int timeout_ms = 0, bool wait_for_ready = false) {
     auto response = std::unique_ptr<EchoResponse>(new EchoResponse());
     EchoRequest request;
     request.set_message(kRequestMessage_);
     ClientContext context;
+    if (timeout_ms > 0) {
+      context.set_deadline(grpc_timeout_milliseconds_to_deadline(timeout_ms));
+    }
+    // See https://github.com/grpc/grpc/blob/master/doc/wait-for-ready.md for
+    // details of wait-for-ready semantics
+    if (wait_for_ready) {
+      context.set_wait_for_ready(true);
+    }
     Status status = stub->Echo(&context, request, response.get());
-    if (status.ok()) {
+    auto ok = status.ok();
+    if (ok) {
       gpr_log(GPR_DEBUG, "RPC returned %s\n", response->message().c_str());
     } else {
       gpr_log(GPR_DEBUG, "RPC failed: %s", status.error_message().c_str());
     }
-    if (expect_success) {
-      EXPECT_TRUE(status.ok());
-    }
+    return ok;
   }
 
   struct ServerData {
@@ -263,7 +271,7 @@ class FlakyNetworkTest : public ::testing::Test {
     return true;
   }
 
-  bool WaitForChannelReady(Channel* channel, int timeout_seconds = 10) {
+  bool WaitForChannelReady(Channel* channel, int timeout_seconds = 5) {
     const gpr_timespec deadline =
         grpc_timeout_seconds_to_deadline(timeout_seconds);
     grpc_connectivity_state state;
@@ -299,7 +307,7 @@ TEST_F(FlakyNetworkTest, NetworkTransition) {
   auto channel = BuildChannel("pick_first", args);
   auto stub = BuildStub(channel);
   // Channel should be in READY state after we send an RPC
-  SendRpc(stub, /*expect_success=*/true);
+  EXPECT_TRUE(SendRpc(stub));
   EXPECT_EQ(channel->GetState(false), GRPC_CHANNEL_READY);
 
   std::atomic_bool shutdown{false};
@@ -327,8 +335,8 @@ TEST_F(FlakyNetworkTest, NetworkTransition) {
   sender.join();
 }
 
-// Traffic to server server is blackholed temporarily
-TEST_F(FlakyNetworkTest, ServerUnreachable) {
+// Traffic to server server is blackholed temporarily with keepalives enabled
+TEST_F(FlakyNetworkTest, ServerUnreachableWithKeepalive) {
   const int kKeepAliveTimeMs = 1000;
   const int kKeepAliveTimeoutMs = 1000;
   ChannelArguments args;
@@ -340,7 +348,7 @@ TEST_F(FlakyNetworkTest, ServerUnreachable) {
   auto channel = BuildChannel("pick_first", args);
   auto stub = BuildStub(channel);
   // Channel should be in READY state after we send an RPC
-  SendRpc(stub, /*expect_success=*/true);
+  EXPECT_TRUE(SendRpc(stub));
   EXPECT_EQ(channel->GetState(false), GRPC_CHANNEL_READY);
 
   std::atomic_bool shutdown{false};
@@ -366,6 +374,33 @@ TEST_F(FlakyNetworkTest, ServerUnreachable) {
   sender.join();
 }
 
+//
+// Traffic to server server is blackholed temporarily with keepalives disabled
+TEST_F(FlakyNetworkTest, ServerUnreachableNoKeepalive) {
+  auto channel = BuildChannel("pick_first", ChannelArguments());
+  auto stub = BuildStub(channel);
+  // Channel should be in READY state after we send an RPC
+  EXPECT_TRUE(SendRpc(stub));
+  EXPECT_EQ(channel->GetState(false), GRPC_CHANNEL_READY);
+
+  // break network connectivity
+  DropPackets();
+
+  std::thread sender = std::thread([this, &stub]() {
+    // RPC with deadline should timeout
+    EXPECT_FALSE(SendRpc(stub, /*timeout_ms=*/500, /*wait_for_ready=*/true));
+    // RPC without deadline forever until call finishes
+    EXPECT_TRUE(SendRpc(stub, /*timeout_ms=*/0, /*wait_for_ready=*/true));
+  });
+
+  std::this_thread::sleep_for(std::chrono::milliseconds(2000));
+  // bring network interface back up
+  RestoreNetwork();
+
+  // wait for RPC to finish
+  sender.join();
+}
+
 // Send RPCs over a flaky network connection
 TEST_F(FlakyNetworkTest, FlakyNetwork) {
   const int kKeepAliveTimeMs = 1000;
@@ -380,13 +415,13 @@ TEST_F(FlakyNetworkTest, FlakyNetwork) {
   auto channel = BuildChannel("pick_first", args);
   auto stub = BuildStub(channel);
   // Channel should be in READY state after we send an RPC
-  SendRpc(stub, /*expect_success=*/true);
+  EXPECT_TRUE(SendRpc(stub));
   EXPECT_EQ(channel->GetState(false), GRPC_CHANNEL_READY);
 
   // simulate flaky network (packet loss, corruption and delays)
   FlakeNetwork();
   for (int i = 0; i < kMessageCount; ++i) {
-    SendRpc(stub, /*expect_success=*/true);
+    EXPECT_TRUE(SendRpc(stub));
   }
   // remove network flakiness
   UnflakeNetwork();
