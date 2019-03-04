@@ -31,9 +31,9 @@
 #include <grpc/support/sync.h>
 
 extern "C" {
-#include <openssl/bn.h>
-#include <openssl/pem.h>
-#include <openssl/rsa.h>
+#include <openssl_grpc/bn.h>
+#include <openssl_grpc/pem.h>
+#include <openssl_grpc/rsa.h>
 }
 
 #include "src/core/lib/gpr/string.h"
