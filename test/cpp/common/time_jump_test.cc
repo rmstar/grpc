@@ -68,10 +68,12 @@ class TimeJumpTest : public ::testing::TestWithParam<std::string> {
   }
   void TearDown() override {
     // Skip test if slowdown factor > 1
+    gpr_log(GPR_ERROR, "before ntp sync");
     if (grpc_test_slowdown_factor() == 1) {
       run_cmd("sudo sntp -sS pool.ntp.org");
       grpc_shutdown_blocking();
     }
+    gpr_log(GPR_ERROR, "after ntp sync");
   }
 
   const int kWaitTimeMs = 1500;
@@ -139,5 +141,8 @@ TEST_P(TimeJumpTest, TimedWait) {
 int main(int argc, char** argv) {
   grpc::testing::TestEnvironment env(argc, argv);
   ::testing::InitGoogleTest(&argc, argv);
-  return RUN_ALL_TESTS();
+  gpr_log(GPR_ERROR, "test starting");
+  int ret = RUN_ALL_TESTS();
+  gpr_log(GPR_ERROR, "end of tests");
+  return ret;
 }
